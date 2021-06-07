@@ -169,12 +169,12 @@ let buyAction = async () => {
 
     // let beginTime = new Date();
     // console.log(beginTime.toLocaleString());
-    const tx = await router.swapExactTokensForTokens(
+    const tx = await router.swapExactTokensForETHSupportingFeeOnTransferTokens(
         amountIn,
         amountOutMin,
         [tokenIn, tokenOut],
         config.wallteAddress,
-        Date.now() + 1000 * 20, //10s
+        Date.now() + 1000 * 20, //20s
         {
             'gasLimit': config.gasLimit,
             'gasPrice': ethers.utils.parseUnits(`${config.GWEI}`, 'gwei')
