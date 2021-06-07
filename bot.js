@@ -186,7 +186,7 @@ let buyAction = async () => {
         amountOutMin,
         [tokenIn, tokenOut],
         config.wallteAddress,
-        Date.now() + 10 * 60 * 10, //10 minutes
+        Date.now() + 1000 * 10, //10 s
         {
             'gasLimit': config.gasLimit,
             'gasPrice': ethers.utils.parseUnits(`${config.GWEI}`, 'gwei')

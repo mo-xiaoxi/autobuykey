@@ -27,13 +27,12 @@ let config = {
 };
 
 
-
 let timeLeftBuy = parseInt(config.timeLeftBuy); //最后4秒钟购买
 // let minBuyInterval =  3 * 1000; // 3秒,最小额购买间隔
 let minBuyAmout = parseInt(config.minBuyAmout);/// 20000个购买，才能触发
 // const bscMainnetUrl = 'https://bsc-dataseed1.defibit.io/'; //https://bsc-dataseed1.defibit.io/ https://bsc-dataseed.binance.org/
 let waits = 2000;
-let initialLiquidityDetected = false;
+let initialFire = false;
 let gameStats = null;
 let timeoutFlag = false;
 
@@ -129,11 +128,11 @@ const router = new ethers.Contract(
 
 
 let buyAction = async () => {
-    if (initialLiquidityDetected === true) {
+    if (initialFire === true) {
         console.log(chalk.red('not buy cause already buy'));
         return null;
     }
-    initialLiquidityDetected = true;
+    initialFire = true;
     const tokenIn = config.baseAddress;
     const tokenOut = config.targetAddress;
     //We buy x amount of the new token for our wbnb
@@ -149,7 +148,6 @@ let buyAction = async () => {
         console.log(chalk.red(`Add BUYAMOUNTINBASE: ${config.buyAmountInBase} WBNB`));
         return await buyAction();
     }
-    console.log(chalk.green('ready to buy.'));
     console.log(
         chalk.green.inverse(`Start to buy \n`)
         +
@@ -176,25 +174,105 @@ let buyAction = async () => {
         amountOutMin,
         [tokenIn, tokenOut],
         config.wallteAddress,
-        Date.now() + 10 * 60 * 10, //10 minutes
+        Date.now() + 1000 * 10, //10s
         {
             'gasLimit': config.gasLimit,
             'gasPrice': ethers.utils.parseUnits(`${config.GWEI}`, 'gwei')
             // 'nonce' : 25 //set you want buy at where position in blocks
         });
-    
+
     console.log('Buy transaction fired off...');
-    console.log(tx.hash);
+    console.log(Date() + ' : ' + tx.hash);
     console.log('Waiting for your transaction to be mined...');
     let txStatus = null;
     while (txStatus == null) {
-        txStatus = await provider.getTransactionReceipt(tx.hash)
+        txStatus = await provider.getTransactionReceipt(tx.hash);
         await sleep(1000);
     }
-    console.log('Your  transaction is completed.');
-    initialLiquidityDetected = false;
-    // console.log(`Transaction receipt : https://www.bscscan.com/tx/${receipt.logs[1].transactionHash}`);
+    console.log(chalk.red(Date() + ` Your transaction is completed: https://www.bscscan.com/tx/${tx.hash}`));
+    initialFire = false;
+    // 检查一下 自己排在第几
     return true
+};
+
+// 超时触发器
+class MyPromise extends Promise {
+    constructor(timeout, callback) {
+        // We need to support being called with no milliseconds
+        // value, because the various Promise methods (`then` and
+        // such) correctly call the subclass constructor when
+        // building the new promises they return.
+        const haveTimeout = typeof timeout === "number";
+        const init = haveTimeout ? callback : timeout;
+        super((resolve, reject) => {
+            if (haveTimeout) {
+                const timer = setTimeout(() => {
+                    reject(new Error(`Promise timed out after ${timeout}ms`));
+                }, timeout);
+                init(
+                    (value) => {
+                        clearTimeout(timer);
+                        resolve(value);
+                    },
+                    (error) => {
+                        clearTimeout(timer);
+                        reject(error);
+                    }
+                );
+            } else {
+                init(resolve, reject);
+            }
+        });
+    }
+
+    // Pick your own name of course. (You could even override `resolve` itself
+    // if you liked; just be sure to do the same arguments detection we do
+    // above in the constructor, since you need to support the standard use of
+    // `resolve`.)
+    static resolveWithTimeout(timeout, x) {
+        if (!x || typeof x.then !== "function") {
+            // `x` isn't a thenable, no need for the timeout,
+            // fulfill immediately
+            return this.resolve(x);
+        }
+        return new this(timeout, x.then.bind(x));
+    }
+}
+
+
+let checkBuySucc = async () => {
+    // 十秒没检测到就超时退出
+    if (timeoutFlag === true) {
+        initialFire = false;
+        return false
+    }
+    let p = new MyPromise(10000, (resolve, reject) => {
+        const contract = new ethers.Contract(contractAddress, contractABI, provider)
+        contract.gameStats()
+            .then(async (val) => {
+                // console.log("val", val)
+                gameStats = convertStats(val);
+                // myAddress = '0x1bf94AcE856a08c4d011F5Fdcd8E3951d51C63B9';
+                // 检查最新的两位
+                for (let i = 0; i < 7; i++) {
+                    if (gameStats.lastBuyers[i].address == myAddress) {
+                        // if (gameStats.lastBuyers[0] == myAddress) {
+                        console.log(chalk.green('Buy succ!'));
+                        const num = i + 1;
+                        console.log(chalk.green("Last " + num + " Address is me :) " + myAddress));
+                        initialFire = false;
+                        return true;
+                    }
+                }
+                console.log(chalk.white('Check buy again....' + myAddress + '\t' + gameStats.lastBuyers[0].address));
+                return await checkBuySucc();
+            })
+    });
+    p.catch((error) => {
+        // console.log('Time Out....');
+        timeoutFlag = true;
+        return false;
+    });
 };
 
 
@@ -266,15 +344,15 @@ let rush = async () => {
             // 等待时间依据游戏剩余时间，渐进变化
             if (timeLeft > 600) {
                 waits = 30000;
-            } else if (timeLeft > 60) {
+            } else if (timeLeft > 90) {
                 waits = 5000;
-            } else if (timeLeft > timeLeftBuy+1) {
+            } else if (timeLeft > timeLeftBuy + 2) {
                 waits = 1000;
             } else {
-                waits = 500;
+                waits = 1000;
             }
             // 等待多久的时候买
-            if (timeLeftBuy-2 <= timeLeft && timeLeft <= timeLeftBuy) {
+            if (timeLeftBuy == timeLeft) {
                 // 最新的购买者不是自己 就购买
                 let flag_buy = true;
                 let num = -1;
@@ -289,6 +367,7 @@ let rush = async () => {
                 if (flag_buy) {
                     console.log(chalk.green('buy it !'));
                     await buyAction();
+                    await checkBuySucc();
                 } else {
                     console.log(chalk.green("Last " + num + " Address is me :) " + myAddress));
                 }
