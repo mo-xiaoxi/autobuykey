@@ -119,7 +119,10 @@ const router = new ethers.Contract(
     config.router,
     [
         'function getAmountsOut(uint amountIn, address[] memory path) public view returns (uint[] memory amounts)',
-        'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)'
+        'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
+        'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
+        'function swapExactTokensForETHSupportingFeeOnTransferTokens(  uint amountIn,uint amountOutMin,address[] calldata path,address to, uint deadline) external',
+        'function swapExactTokensForTokensSupportingFeeOnTransferTokens( uint amountIn, uint amountOutMin, address[] calldata path,address to, uint deadline) external'
     ],
     account
 );
@@ -179,15 +182,18 @@ let buyAction = async () => {
             'gasPrice': ethers.utils.parseUnits(`${config.GWEI}`, 'gwei')
             // 'nonce' : 25 //set you want buy at where position in blocks
         });
-    console.log(chalk.green('buy Send...'));
-    // let nowTime = new Date();
-    // console.log(nowTime.toLocaleString());
-    // console.log(nowTime-beginTime);
-    // const receipt = await tx.wait();
+    
+    console.log('Buy transaction fired off...');
+    console.log(tx.hash);
+    console.log('Waiting for your transaction to be mined...');
+    let txStatus = null;
+    while (txStatus == null) {
+        txStatus = await provider.getTransactionReceipt(tx.hash)
+        await sleep(1000);
+    }
+    console.log('Your  transaction is completed.');
+    initialLiquidityDetected = false;
     // console.log(`Transaction receipt : https://www.bscscan.com/tx/${receipt.logs[1].transactionHash}`);
-    // let endTime = new Date();
-    // console.log(endTime-beginTime);
-    // console.log(endTime.toLocaleString());
     return true
 };
 
@@ -245,84 +251,6 @@ const calculateTimeLeftSeconds = () => {
 }
 
 
-// 超时触发器
-class MyPromise extends Promise {
-    constructor(timeout, callback) {
-        // We need to support being called with no milliseconds
-        // value, because the various Promise methods (`then` and
-        // such) correctly call the subclass constructor when
-        // building the new promises they return.
-        const haveTimeout = typeof timeout === "number";
-        const init = haveTimeout ? callback : timeout;
-        super((resolve, reject) => {
-            if (haveTimeout) {
-                const timer = setTimeout(() => {
-                    reject(new Error(`Promise timed out after ${timeout}ms`));
-                }, timeout);
-                init(
-                    (value) => {
-                        clearTimeout(timer);
-                        resolve(value);
-                    },
-                    (error) => {
-                        clearTimeout(timer);
-                        reject(error);
-                    }
-                );
-            } else {
-                init(resolve, reject);
-            }
-        });
-    }
-
-    // Pick your own name of course. (You could even override `resolve` itself
-    // if you liked; just be sure to do the same arguments detection we do
-    // above in the constructor, since you need to support the standard use of
-    // `resolve`.)
-    static resolveWithTimeout(timeout, x) {
-        if (!x || typeof x.then !== "function") {
-            // `x` isn't a thenable, no need for the timeout,
-            // fulfill immediately
-            return this.resolve(x);
-        }
-        return new this(timeout, x.then.bind(x));
-    }
-}
-
-
-let checkBuySucc = async () => {
-    // 十秒没检测到就超时退出
-    if (timeoutFlag === true) {
-        initialLiquidityDetected = false;
-        return false
-    }
-    let p = new MyPromise(10000, (resolve, reject) => {
-        const contract = new ethers.Contract(contractAddress, contractABI, provider)
-        contract.gameStats()
-            .then(async (val) => {
-                // console.log("val", val)
-                gameStats = convertStats(val);
-                // 检查最新的两位
-                for (let i = 0; i < 2; i++) {
-                    if (gameStats.lastBuyers[i].address == myAddress) {
-                        // if (gameStats.lastBuyers[0] == myAddress) {
-                        console.log(chalk.green('Buy succ!'));
-                        initialLiquidityDetected = false;
-                        return true;
-                    }
-                }
-                console.log(chalk.white('Check buy again....' + myAddress + '\t' + gameStats.lastBuyers[0].address));
-                return await checkBuySucc();
-            })
-    });
-    p.catch((error) => {
-        // console.log('Time Out....');
-        timeoutFlag = true;
-        return false;
-    });
-};
-
-
 let rush = async () => {
     // setTimeout();
     // console.log("fetching..")
@@ -361,8 +289,6 @@ let rush = async () => {
                 if (flag_buy) {
                     console.log(chalk.green('buy it !'));
                     await buyAction();
-                    // 购买以后，应该一直check最新的是不是自己。check到最新的是自己了，再向下执行。表明购买成功。
-                    await checkBuySucc();
                 } else {
                     console.log(chalk.green("Last " + num + " Address is me :) " + myAddress));
                 }
@@ -376,7 +302,7 @@ let rush = async () => {
         })
 };
 
-function wait(ms) {
+function sleep(ms) {
     return new Promise(resolve => setTimeout(() => resolve(), ms));
 };
 
@@ -384,7 +310,7 @@ function wait(ms) {
 async function main() {
     while (true) {
         await rush();
-        await wait(waits);
+        await sleep(waits);
     }
 }
 
