@@ -340,7 +340,7 @@ let rush = async () => {
                 waits = 30000;
             } else if (timeLeft > 60) {
                 waits = 5000;
-            } else if (timeLeft > 10) {
+            } else if (timeLeft > timeLeftBuy+1) {
                 waits = 1000;
             } else {
                 waits = 500;
